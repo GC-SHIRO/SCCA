@@ -1,0 +1,17 @@
+{
+  "name": "say_hello",
+  "description": "Echo a friendly greeting for a provided name.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    },
+    "required": ["name"]
+  },
+  "impl": {
+    "type": "shell",
+    "command": "echo Hello {{name}} from SCCA skill"
+  }
+}

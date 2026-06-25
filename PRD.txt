@@ -1,0 +1,585 @@
+
+# 产品需求文档（PRD）
+## 简易 TUI Claude Code Assistant（SCCA）
+
+**版本**：v1.0  
+**开发语言**：C++17  
+**依赖**：`nlohmann/json.hpp`（单头文件）、系统自带 `curl` 命令  
+**目标**：2-3天完成可运行的演示版本
+
+
+## 1. 产品概述
+
+### 1.1 产品定位
+一个运行在终端里的 AI 编程助手，通过命令行 TUI 交互，能调用 Claude API 理解用户意图，并自动执行文件操作、命令运行、Python 代码执行等任务。
+
+### 1.2 核心价值
+- **纯终端工作流**：开发者在命令行环境下就能获得 AI 辅助
+- **透明化过程**：实时展示 Agent 的思考→行动→观察全过程
+- **零配置启动**：下载即用，API Key 环境变量配置即可
+
+### 1.3 目标用户
+- 习惯终端操作的开发者
+- 需要快速原型验证的极客
+- C++ 课程设计展示者
+
+
+## 2. 功能需求
+
+### 2.1 用户故事列表
+
+| 编号 | 用户故事 | 优先级 |
+| :--- | :--- | :--- |
+| US-01 | 作为用户，我希望能看到类似聊天软件的对话界面 | P0 |
+| US-02 | 作为用户，我希望在底部输入框输入我的问题 | P0 |
+| US-03 | 作为用户，我希望 AI 的回复能展示在对话区 | P0 |
+| US-04 | 作为用户，我想看到当前对话消耗了多少 Token | P1 |
+| US-05 | 作为用户，我希望 Agent 能帮我创建/修改/删除文件 | P0 |
+| US-06 | 作为用户，我希望 Agent 能帮我执行命令行指令 | P0 |
+| US-07 | 作为用户，我希望 Agent 能帮我写并运行 Python 代码 | P0 |
+| US-08 | 作为用户，我希望看到 Agent 调用工具的完整过程 | P0 |
+| US-09 | 作为用户，我希望能让 Agent 自己拆分复杂任务 | P1 |
+| US-10 | 作为用户，我希望手动添加自定义 Skill | P2 |
+
+### 2.2 界面布局
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  🤖 SCCA v1.0                    上下文: 1.2K/200K Tokens │ ← 标题栏
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  用户: 帮我创建一个 Flask 应用                              │ ← 对话区
+│  ────────────────────────────────────────────────────────── │   (滚动)
+│  Agent: 好的，我来帮你创建...                               │
+│  ────────────────────────────────────────────────────────── │
+│  🔧 调用工具: write_file("/app.py", "...")                │ ← 工具调用记录
+│  ✅ 工具执行成功                                           │
+│  ────────────────────────────────────────────────────────── │
+│  Agent: Flask 应用已创建，你可以运行 python app.py        │
+│                                                              │
+│  ... (更多历史记录)                                         │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│  > _                                                       │ ← 输入区
+│  [Enter发送] [Ctrl+C退出] [/?帮助]                        │ ← 状态栏
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 2.3 详细功能说明
+
+#### F-01: 对话界面（P0）
+| 要素 | 说明 |
+| :--- | :--- |
+| 标题栏 | 左侧显示产品名和版本，右侧显示 Token 使用情况 |
+| 对话区 | 显示所有历史消息，用户消息左对齐，Agent 消息左对齐并缩进 |
+| 工具调用区 | 以特殊颜色/前缀展示 Agent 正在调用的工具及参数 |
+| 输入区 | 固定位于底部，支持多行输入（Enter 换行，Ctrl+Enter 发送） |
+| 状态栏 | 显示快捷键提示 |
+
+**验收标准**：
+- [ ] 界面在终端启动后立即渲染完整
+- [ ] 新消息自动滚动到可视区域
+- [ ] 输入框始终位于屏幕最底部
+
+#### F-02: LLM 对话（P0）
+| 要素 | 说明 |
+| :--- | :--- |
+| API 对接 | 调用 Anthropic Messages API（model: claude-3-haiku-20240307） |
+| 消息历史 | 每次请求携带完整对话历史（用户+助手+工具结果） |
+| 错误处理 | API 调用失败时在界面显示红色错误信息 |
+
+**验收标准**：
+- [ ] 用户发送消息后 5 秒内获得响应
+- [ ] 支持连续多轮对话
+- [ ] API Key 通过环境变量 `ANTHROPIC_API_KEY` 读取
+
+#### F-03: 文件操作工具（P0）
+Agent 可调用的工具集合：
+
+| 工具名 | 功能 | 参数 |
+| :--- | :--- | :--- |
+| `read_file` | 读取文件内容 | `path: string` |
+| `write_file` | 创建或覆写文件 | `path: string, content: string` |
+| `append_file` | 追加内容到文件 | `path: string, content: string` |
+| `delete_file` | 删除文件 | `path: string` |
+| `list_dir` | 列出目录内容 | `path: string` |
+
+**验收标准**：
+- [ ] 所有文件操作仅限当前工作目录及子目录（安全沙箱）
+- [ ] 尝试访问目录外的路径时返回错误提示
+
+#### F-04: 命令执行工具（P0）
+| 工具名 | 功能 | 参数 |
+| :--- | :--- | :--- |
+| `execute_command` | 执行 Shell 命令 | `command: string, timeout?: int` |
+
+**限制**：
+- 默认超时 30 秒
+- 执行结果（stdout + stderr）返回给 Agent
+- 危险命令（`rm -rf /` 等）需要二次确认（TUI 弹窗提示）
+
+**验收标准**：
+- [ ] 命令执行输出能完整返回给 Agent
+- [ ] 超时后进程被终止并返回 timeout 错误
+
+#### F-05: Python 代码执行工具（P0）
+| 工具名 | 功能 | 参数 |
+| :--- | :--- | :--- |
+| `run_python` | 执行 Python 代码片段 | `code: string` |
+
+**实现方式**：
+- 将代码写入临时文件 `/tmp/scca_code_<pid>.py`
+- 调用 `python3` 执行，捕获 stdout/stderr
+- 执行完毕后删除临时文件
+
+**验收标准**：
+- [ ] 支持标准库导入（numpy/pandas 等需系统已安装）
+- [ ] 执行错误时返回完整的 Traceback
+
+#### F-06: Agent 工具调用过程展示（P0）
+在对话区以结构化方式展示：
+
+```
+🔧 调用工具: write_file
+   ├─ path: "app.py"
+   └─ content: "from flask import Flask\napp = Flask(__name__)\n..."
+⏳ 执行中...
+✅ 执行成功 (耗时 12ms)
+   └─ 输出: 文件已写入，大小 156 字节
+```
+
+**验收标准**：
+- [ ] 工具调用的输入参数完整展示
+- [ ] 执行结果（成功/失败）清晰显示
+- [ ] 支持嵌套工具调用（工具1结果 → 工具2）
+
+#### F-07: Agent 自主任务规划（P1）
+Agent 可以给自己设置子任务：
+
+```
+用户: 帮我搭建一个 Flask 博客
+Agent 思考:
+  子任务1: 创建项目目录结构
+  子任务2: 编写 app.py 主文件
+  子任务3: 创建 templates/index.html
+  子任务4: 编写 requirements.txt
+  子任务5: 执行 pip install 并启动服务
+```
+
+**实现方式**：
+- Agent 在响应中输出特殊标记 `[TASK: xxx]`
+- TUI 解析后在对话区以缩进列表展示
+
+**验收标准**：
+- [ ] 复杂任务被拆分为 3-5 个子任务
+- [ ] 子任务按顺序执行，前一个完成才执行下一个
+
+#### F-08: Skill 管理系统（P2）
+符合 Anthropic Skill 规范（简化版）：
+
+**Skill 定义格式**（JSON）：
+```json
+{
+  "name": "create_react_component",
+  "description": "创建 React 函数组件",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string"},
+      "props": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["name"]
+  }
+}
+```
+
+**加载方式**：
+- 启动时扫描 `./skills/` 目录下所有 `.json` 文件
+- 自动注册为 Agent 可用工具
+
+**手动添加**：
+- 界面提供 `/skill add <name>` 命令
+- 引导用户输入描述和参数 Schema
+
+**验收标准**：
+- [ ] 技能加载后在工具列表中可见
+- [ ] Agent 能正确调用技能并传入参数
+- [ ] 技能执行结果返回给 Agent
+
+
+## 3. 非功能需求
+
+### 3.1 性能要求
+| 指标 | 要求 |
+| :--- | :--- |
+| 界面渲染延迟 | < 50ms |
+| 工具执行反馈 | 实时显示，无明显卡顿 |
+| Token 统计更新 | 每次 API 响应后 1 秒内刷新 |
+| 内存占用 | < 50MB（不含对话历史） |
+
+### 3.2 兼容性要求
+| 平台 | 支持版本 |
+| :--- | :--- |
+| Linux | Ubuntu 20.04+, 任意发行版 |
+| macOS | 11.0+ (Big Sur) |
+| Windows | Windows 10+ (需 WSL2 或 MinGW) |
+
+**终端要求**：
+- 支持 ANSI 转义序列（几乎所有现代终端）
+- 最小尺寸：80x24 字符
+
+### 3.3 安全性要求
+| 项目 | 措施 |
+| :--- | :--- |
+| API Key | 仅从环境变量读取，不落盘 |
+| 文件操作 | 禁止访问 `.git`、`/etc`、`/root` 等敏感目录 |
+| 命令执行 | 黑名单过滤 `rm -rf /`, `dd if=/dev/zero`, `:(){ :|:& };:` |
+| 临时文件 | 使用 `/tmp/scca_<pid>_<random>` 命名，用完即删 |
+
+### 3.4 用户体验要求
+- 所有加载/等待状态必须有视觉反馈（`...` 或旋转动画）
+- 错误信息包含可操作的解决建议
+- 支持 `/?` 或 `/help` 命令查看所有可用指令
+
+
+## 4. 技术架构
+
+### 4.1 模块划分
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     main.cpp                           │
+│                   (程序入口)                           │
+└─────────────────────┬───────────────────────────────────┘
+                      │
+┌─────────────────────┼───────────────────────────────────┐
+│                     ▼                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │
+│  │  TUI 渲染器   │  │  Agent 引擎  │  │ 工具注册表   │ │
+│  │  - 屏幕刷新   │  │  - 对话管理  │  │  - 文件操作  │ │
+│  │  - 颜色控制   │  │  - 工具调用  │  │  - 命令执行  │ │
+│  │  - 滚动管理   │◄─┤  - 任务规划  │──┤  - Python    │ │
+│  └──────────────┘  └──────┬───────┘  │  - Skills   │ │
+│                           │           └─────────────┘ │
+│                           │                            │
+│                    ┌──────▼───────┐                    │
+│                    │ LLM 客户端   │                    │
+│                    │ - HTTP 封装  │                    │
+│                    │ - JSON 解析  │                    │
+│                    │ - Token 统计 │                    │
+│                    └──────────────┘                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 4.2 核心类设计
+
+```cpp
+// 消息结构
+struct Message {
+    std::string role;        // "user" | "assistant" | "tool"
+    std::string content;
+    std::vector<ToolCall> tool_calls;  // assistant 消息包含
+    std::string tool_call_id;          // tool 消息包含
+};
+
+// 工具调用
+struct ToolCall {
+    std::string id;
+    std::string name;
+    json arguments;
+};
+
+// 工具定义（Agent 可见）
+struct ToolDefinition {
+    std::string name;
+    std::string description;
+    json input_schema;
+    std::function<json(const json&)> executor;
+};
+
+// 主控制器
+class SCCA {
+public:
+    void run();                          // 主循环
+    void render();                       // 渲染界面
+    void processInput(const std::string& input);  // 处理用户输入
+    void agentLoop(const std::string& userMsg);    // Agent 主循环
+    void executeTool(const ToolCall& call);        // 执行工具
+    void updateTokenCount();                       // 更新 Token 统计
+private:
+    TUI tui;
+    LLMClient llm;
+    ToolRegistry tools;
+    std::vector<Message> history;
+    int totalTokens;
+};
+```
+
+### 4.3 数据流图
+
+```
+用户输入
+   │
+   ▼
+┌─────────────┐
+│ 添加到历史   │
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│ 调用 LLM API │◄──────┐
+└──────┬──────┘        │
+       ▼               │
+┌─────────────┐       │
+│ 解析响应     │       │
+└──────┬──────┘       │
+       ▼               │
+┌─────────────┐       │
+│ 有工具调用？ │──否──▶ 结束
+└──────┬──────┘       │
+       │是            │
+       ▼              │
+┌─────────────┐       │
+│ 执行工具     │       │
+└──────┬──────┘       │
+       ▼              │
+┌─────────────┐       │
+│ 工具结果加入 │───────┘
+│ 历史再调用   │
+└─────────────┘
+```
+
+
+## 5. 用户操作流程
+
+### 5.1 主流程
+```
+启动程序
+   │
+   ▼
+读取环境变量 ANTHROPIC_API_KEY ──失败──▶ 提示错误并退出
+   │成功
+   ▼
+扫描 ./skills/ 加载技能
+   ▼
+渲染 TUI 界面
+   ▼
+等待用户输入
+   │
+   ├── 普通文字 ──▶ 发送给 Agent
+   ├── /exit ──▶ 退出程序
+   ├── /help ──▶ 显示帮助
+   ├── /clear ──▶ 清空对话历史
+   └── /skill add <name> ──▶ 进入技能添加向导
+```
+
+### 5.2 Agent 处理流程
+```
+接收用户消息
+   │
+   ▼
+构建请求（系统提示词 + 历史 + 工具定义）
+   │
+   ▼
+调用 LLM API
+   │
+   ▼
+解析响应
+   │
+   ├── 文本回复 ──▶ 显示在对话区
+   │
+   └── 工具调用 ──▶ 显示调用过程
+                    │
+                    ▼
+                执行工具
+                    │
+                    ▼
+                工具结果加入历史
+                    │
+                    ▼
+                返回 "调用 LLM API"（继续循环）
+```
+
+
+## 6. 数据模型
+
+### 6.1 对话历史存储
+```cpp
+// 对话历史保存在内存 vector 中
+std::vector<Message> conversation_history;
+
+// 系统提示词（固定在开头）
+const std::string SYSTEM_PROMPT = R"(
+你是一个编程助手，可以帮助用户完成文件操作、命令执行、Python 编程等任务。
+你拥有以下工具可用：
+- read_file(path): 读取文件
+- write_file(path, content): 写入文件
+- execute_command(command): 执行命令
+- run_python(code): 执行 Python 代码
+
+当需要使用工具时，请以 JSON 格式输出工具调用。
+)";
+```
+
+### 6.2 Skill 存储
+```json
+// ~/.scca/skills/my_skill.json
+{
+  "name": "deploy_to_vercel",
+  "description": "部署项目到 Vercel",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "project_path": {"type": "string"},
+      "env_vars": {"type": "object"}
+    }
+  },
+  "impl": {
+    "type": "shell",
+    "command": "cd {{project_path}} && vercel --prod"
+  }
+}
+```
+
+### 6.3 配置文件
+```json
+// ~/.scca/config.json
+{
+  "model": "claude-3-haiku-20240307",
+  "max_tokens": 4096,
+  "theme": "dark",
+  "workspace_dir": ".",
+  "dangerous_commands_confirm": true
+}
+```
+
+
+## 7. 接口定义
+
+### 7.1 Anthropic API 请求格式
+```json
+POST https://api.anthropic.com/v1/messages
+Headers:
+  x-api-key: ${ANTHROPIC_API_KEY}
+  anthropic-version: 2023-06-01
+  content-type: application/json
+
+Body:
+{
+  "model": "claude-3-haiku-20240307",
+  "max_tokens": 4096,
+  "messages": [
+    {"role": "user", "content": "..."},
+    {"role": "assistant", "content": "...", "tool_calls": [...]},
+    {"role": "tool", "content": "...", "tool_call_id": "..."}
+  ],
+  "tools": [
+    {
+      "name": "write_file",
+      "description": "写入文件",
+      "input_schema": {...}
+    }
+  ]
+}
+```
+
+### 7.2 工具执行接口
+```cpp
+// 所有工具的执行器必须符合此签名
+using ToolExecutor = std::function<json(const json& params)>;
+
+// 工具注册
+void ToolRegistry::registerTool(const std::string& name, 
+                                 const std::string& description,
+                                 const json& schema,
+                                 ToolExecutor executor);
+```
+
+
+## 8. 非功能性需求（补充）
+
+### 8.1 错误码定义
+| 错误码 | 含义 | 用户提示 |
+| :--- | :--- | :--- |
+| E001 | API Key 未设置 | "请设置环境变量 ANTHROPIC_API_KEY" |
+| E002 | API 调用失败 | "API 请求失败: {具体原因}" |
+| E003 | 工具执行超时 | "命令执行超时（30秒）" |
+| E004 | 文件访问被拒绝 | "无权访问 {path}，仅限工作目录" |
+| E005 | JSON 解析失败 | "Agent 响应格式错误，请重试" |
+
+### 8.2 日志记录（开发阶段）
+```cpp
+// 日志级别: ERROR, WARN, INFO, DEBUG
+// 日志输出到 ~/.scca/logs/scca.log
+// 生产模式只记录 ERROR 和 WARN
+```
+
+
+## 9. 交付物清单
+
+| 文件 | 说明 |
+| :--- | :--- |
+| `src/main.cpp` | 程序入口，主循环 |
+| `src/tui.hpp` / `tui.cpp` | TUI 渲染模块 |
+| `src/agent.hpp` / `agent.cpp` | Agent 核心逻辑 |
+| `src/tools.hpp` / `tools.cpp` | 工具注册和执行 |
+| `src/llm_client.hpp` / `llm_client.cpp` | LLM API 调用 |
+| `src/skill.hpp` / `skill.cpp` | Skill 加载和管理 |
+| `CMakeLists.txt` | 构建配置 |
+| `README.md` | 使用说明 |
+| `skills/example.json` | 示例 Skill |
+| `.env.example` | 环境变量示例 |
+
+
+## 10. 开发里程碑
+
+| 阶段 | 目标 | 预计时间 |
+| :--- | :--- | :--- |
+| **M1** | TUI 框架搭建，能显示静态界面 | 4 小时 |
+| **M2** | LLM API 集成，能对话 | 3 小时 |
+| **M3** | 文件操作工具实现 | 2 小时 |
+| **M4** | 命令执行和 Python 执行实现 | 2 小时 |
+| **M5** | Agent 循环串联（含工具调用展示） | 3 小时 |
+| **M6** | Skill 系统、Token 统计、优化打磨 | 4 小时 |
+| **总计** | | **约 18 小时** |
+
+
+## 11. 附录
+
+### A. 系统提示词模板
+```
+你是一个编程助手，工具调用格式要求如下：
+
+当需要调用工具时，你的回复必须是 JSON 格式：
+{"tool": "工具名", "params": {"参数名": "参数值"}}
+
+可用工具：
+{动态生成的工具列表}
+
+工作原则：
+1. 复杂任务拆分成多个步骤
+2. 每一步调用一个工具
+3. 观察结果后再决定下一步
+4. 最终给用户一个完整的总结
+```
+
+### B. 快捷键列表
+| 快捷键 | 功能 |
+| :--- | :--- |
+| `Enter` | 发送消息（非多行模式） |
+| `Ctrl+Enter` | 换行（多行模式） |
+| `Ctrl+C` | 退出程序 |
+| `Ctrl+L` | 刷新屏幕 |
+| `PageUp/PageDown` | 滚动对话历史 |
+| `/?` | 显示帮助 |
+
+### C. 测试用例
+| 场景 | 输入 | 预期输出 |
+| :--- | :--- | :--- |
+| 简单对话 | "你好" | AI 正常回复 |
+| 文件创建 | "创建一个 hello.txt 包含 Hello World" | 文件创建成功，AI 确认 |
+| 命令执行 | "列出当前目录文件" | 执行 ls，返回列表 |
+| Python 代码 | "写一个斐波那契函数并运行" | 代码执行，输出结果 |
+| 多轮对话 | 连续 3 次提问 | 上下文正确累积 |
+| 错误恢复 | "删除 /etc/passwd" | 拒绝执行，提示不安全 |
+
+---
