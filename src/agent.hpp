@@ -11,7 +11,7 @@
 
 class SCCA {
 public:
-    explicit SCCA(std::string workspace);
+    explicit SCCA(std::string workspace); // 禁止隐式类型转换
     void run();
 
 private:

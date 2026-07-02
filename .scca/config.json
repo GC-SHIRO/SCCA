@@ -1,0 +1,6 @@
+{
+  "api_key": "sk-715b3ab9c6eb47f3bf8baba393b63c35",
+  "base_url": "https://api.deepseek.com/anthropic",
+  "max_tokens": 128000,
+  "model": "deepseek-v4-flash"
+}

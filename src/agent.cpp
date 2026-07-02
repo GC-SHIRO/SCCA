@@ -124,7 +124,7 @@ void SCCA::addToolResult(const ToolCall& call, const json& result) {
 void SCCA::agentLoop(const std::string& userMsg) {
     history_.push_back({"user", userMsg, {}, "", ""});
 
-    for (int step = 0; step < 8; ++step) {
+    for (int step = 0; step < 50; ++step) {
         tui_.render(history_, totalTokens_, "Agent is thinking...");
         try {
             LLMResponse response = llm_.complete(history_, tools_.anthropicTools());
@@ -135,11 +135,12 @@ void SCCA::agentLoop(const std::string& userMsg) {
 
             for (const auto& call : response.tool_calls) {
                 tui_.render(history_, totalTokens_, "Running tool " + call.name + "...");
-
+                // 计算时间
                 auto started = std::chrono::steady_clock::now();
                 json result = tools_.execute(call);
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - started).count();
+                
                 result["elapsed_ms"] = elapsed;
                 addToolResult(call, result);
             }

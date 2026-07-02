@@ -47,3 +47,9 @@ desktop.ini
 
 # Workspace runtime artifacts (logs, temp, etc.)
 workspace/
+
+要求.txt
+PRD.txt
+
+.env
+.env.example
